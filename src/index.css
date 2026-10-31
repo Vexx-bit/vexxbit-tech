@@ -71,3 +71,10 @@
   html { scroll-behavior: auto !important; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* Keep hero and engineering copy legible over the live WebGL background. */
+[data-vexxbit-core] { mask-image: linear-gradient(90deg, rgba(0,0,0,.16), rgba(0,0,0,.32) 52%, #000 82%); }
+@media (max-width: 639px) {
+  [data-vexxbit-core] { mask-image: none; opacity: .18; }
+}
+#hero h1 { overflow-wrap: anywhere; }

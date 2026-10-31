@@ -268,6 +268,7 @@ export function Canvas3D({ onPulseReady }: Canvas3DProps) {
               const cyan = material.name === 'Mat_Cyan_Emissive';
               material.color.set(cyan ? '#00F2FE' : '#10B981');
               material.emissive.copy(material.color);
+              material.toneMapped = false;
               material.emissiveIntensity = cyan ? 5 : 3.5;
               emissive.set(material, material.emissiveIntensity);
             } else if (material.name === 'Mat_Quantum_Glass' && material instanceof THREE.MeshPhysicalMaterial) {

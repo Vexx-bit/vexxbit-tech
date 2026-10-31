@@ -191,7 +191,7 @@ export const App: React.FC = () => {
             </div>
 
             {/* Main Headline */}
-            <h1 className="font-display font-extrabold text-[clamp(1.65rem,7.5vw,2.25rem)] sm:text-6xl lg:text-7xl tracking-tight leading-[1.05] text-white">
+            <h1 className="font-display font-extrabold text-[clamp(1.5rem,6.7vw,2.25rem)] sm:text-5xl lg:text-[3.5rem] tracking-tight leading-[1.05] text-white">
               ARCHITECTING <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00f2fe] via-[#38bdf8] to-[#10b981]">
                 AUTONOMOUS AGENTS
