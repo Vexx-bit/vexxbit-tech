@@ -182,7 +182,7 @@ export const App: React.FC = () => {
         {/* HERO SECTION */}
         {/* ========================================================================= */}
         <section id="hero" className="min-h-[75vh] flex flex-col justify-center">
-          <div className="max-w-3xl space-y-6">
+          <div className="max-w-3xl w-full min-w-0 space-y-6">
             
             {/* Mission Category Eyebrow */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.1] text-xs font-mono text-[#00f2fe]">
@@ -191,7 +191,7 @@ export const App: React.FC = () => {
             </div>
 
             {/* Main Headline */}
-            <h1 className="font-display font-extrabold text-4xl sm:text-6xl lg:text-7xl tracking-tight leading-[1.05] text-white">
+            <h1 className="font-display font-extrabold text-[clamp(1.65rem,7.5vw,2.25rem)] sm:text-6xl lg:text-7xl tracking-tight leading-[1.05] text-white">
               ARCHITECTING <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00f2fe] via-[#38bdf8] to-[#10b981]">
                 AUTONOMOUS AGENTS
