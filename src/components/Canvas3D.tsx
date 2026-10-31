@@ -1,344 +1,321 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 gsap.registerPlugin(ScrollTrigger);
 
-interface Canvas3DProps {
-  onPulseReady?: (triggerPulse: () => void) => void;
+type Pulse = () => void;
+interface Canvas3DProps { onPulseReady?: (trigger: Pulse | null) => void }
+interface Pose { x: number; y: number; z: number; ry: number; scale: number }
+
+// Exact names verified in core.glb; short aliases are accepted for future revisions.
+const PIVOTS = {
+  nucleus: ['Quantum_Processor', 'Nucleus'],
+  crystal: ['Floating_Crystal'],
+  x: ['Gimbal_01_Inner_X', 'Gimbal_X'],
+  y: ['Gimbal_02_Middle_Y', 'Gimbal_Y'],
+  z: ['Gimbal_03_Outer_Z', 'Gimbal_Z'],
+  sensors: ['Satellite_Sensors', 'Sensor_Nodes'],
+} as const;
+
+function disposeModel(root: THREE.Object3D) {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  const textures = new Set<THREE.Texture>();
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    geometries.add(object.geometry);
+    const slots = Array.isArray(object.material) ? object.material : [object.material];
+    slots.forEach((material: THREE.Material) => {
+      materials.add(material);
+      Object.values(material).forEach((value: unknown) => {
+        if (value instanceof THREE.Texture) textures.add(value);
+      });
+    });
+  });
+  textures.forEach((texture) => texture.dispose());
+  materials.forEach((material) => material.dispose());
+  geometries.forEach((geometry) => geometry.dispose());
 }
 
-export const Canvas3D: React.FC<Canvas3DProps> = ({ onPulseReady }) => {
+export function Canvas3D({ onPulseReady }: Canvas3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const pulseFnRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-
-    // 1. Scene, Camera, Renderer
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x07080b, 0.12);
-
-    const camera = new THREE.PerspectiveCamera(
-      45,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      100
-    );
-    camera.position.set(0, 0, 6);
-
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      powerPreference: 'high-performance',
-    });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    const host = containerRef.current;
+    if (!host) return;
+    let disposed = false;
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' });
+    } catch {
+      host.dataset.coreStatus = 'webgl-unavailable';
+      return; // All page content and navigation remain available without WebGL.
+    }
+    host.dataset.coreStatus = 'loading';
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.05;
+    renderer.transmissionResolutionScale = 0.5;
+    host.appendChild(renderer.domElement);
 
-    containerRef.current.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 40);
+    camera.position.set(0, 0, 8.6);
+    const choreography = new THREE.Group();
+    const responsiveFit = new THREE.Group();
+    choreography.add(responsiveFit);
+    scene.add(choreography);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const room = new RoomEnvironment();
+    const environment = pmrem.fromScene(room, 0.04);
+    room.dispose();
+    pmrem.dispose();
+    scene.environment = environment.texture;
+    scene.environmentIntensity = 1.4;
+    scene.add(new THREE.HemisphereLight(0xc6edff, 0x081525, 1.5));
+    const key = new THREE.DirectionalLight(0xecfaff, 4);
+    key.position.set(3, 4, 6);
+    scene.add(key);
+    const rim = new THREE.PointLight(0x00f2fe, 26, 18, 2);
+    rim.position.set(-3, 1, 3);
+    scene.add(rim);
 
-    // 2. Lighting Setup
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambientLight);
-
-    const cyanLight = new THREE.PointLight(0x00f2fe, 4, 20);
-    cyanLight.position.set(4, 3, 4);
-    scene.add(cyanLight);
-
-    const emeraldLight = new THREE.PointLight(0x10b981, 3, 20);
-    emeraldLight.position.set(-4, -2, 2);
-    scene.add(emeraldLight);
-
-    const coreLight = new THREE.PointLight(0x00f2fe, 2, 8);
-    coreLight.position.set(0, 0, 0);
-    scene.add(coreLight);
-
-    // 3. Central Quantum Core Group
-    const coreGroup = new THREE.Group();
-    scene.add(coreGroup);
-
-    // Inner Crystalline Polyhedron
-    const innerGeo = new THREE.IcosahedronGeometry(0.85, 1);
-    const innerMat = new THREE.MeshPhysicalMaterial({
-      color: 0x050811,
-      emissive: 0x004759,
-      emissiveIntensity: 0.6,
-      roughness: 0.1,
-      metalness: 0.9,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.1,
-      wireframe: false,
-    });
-    const innerCore = new THREE.Mesh(innerGeo, innerMat);
-    coreGroup.add(innerCore);
-
-    // Outer Wireframe Cage
-    const cageGeo = new THREE.IcosahedronGeometry(1.05, 1);
-    const cageMat = new THREE.MeshBasicMaterial({
-      color: 0x00f2fe,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.35,
-    });
-    const outerCage = new THREE.Mesh(cageGeo, cageMat);
-    coreGroup.add(outerCage);
-
-    // Concentric Gyro Rings
-    const rings: THREE.Mesh[] = [];
-    const ringConfigs = [
-      { radius: 1.45, tube: 0.015, color: 0x00f2fe, opacity: 0.7, rotAxis: 'x' },
-      { radius: 1.85, tube: 0.012, color: 0x10b981, opacity: 0.6, rotAxis: 'y' },
-      { radius: 2.25, tube: 0.01, color: 0x38bdf8, opacity: 0.5, rotAxis: 'z' },
-    ];
-
-    ringConfigs.forEach((cfg) => {
-      const ringGeo = new THREE.TorusGeometry(cfg.radius, cfg.tube, 16, 100);
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: cfg.color,
-        transparent: true,
-        opacity: cfg.opacity,
-        wireframe: false,
-      });
-      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      rings.push(ringMesh);
-      coreGroup.add(ringMesh);
-    });
-
-    // Orbiting Satellite Nodes
-    const satelliteCount = 6;
-    const satellites: THREE.Mesh[] = [];
-    for (let i = 0; i < satelliteCount; i++) {
-      const satGeo = new THREE.SphereGeometry(0.04, 16, 16);
-      const satMat = new THREE.MeshBasicMaterial({
-        color: i % 2 === 0 ? 0x00f2fe : 0x10b981,
-      });
-      const sat = new THREE.Mesh(satGeo, satMat);
-      satellites.push(sat);
-      coreGroup.add(sat);
-    }
-
-    // 4. Background Synaptic Particle Constellation
-    const particleCount = 750;
-    const particleGeo = new THREE.BufferGeometry();
-    const particlePos = new Float32Array(particleCount * 3);
-    const particleScales = new Float32Array(particleCount);
-
-    for (let i = 0; i < particleCount; i++) {
-      const i3 = i * 3;
-      particlePos[i3] = (Math.random() - 0.5) * 25;
-      particlePos[i3 + 1] = (Math.random() - 0.5) * 25;
-      particlePos[i3 + 2] = (Math.random() - 0.5) * 20 - 2;
-      particleScales[i] = Math.random();
-    }
-
-    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos, 3));
-
-    const particleMat = new THREE.PointsMaterial({
-      color: 0x7dd3fc,
-      size: 0.035,
-      transparent: true,
-      opacity: 0.45,
-      blending: THREE.AdditiveBlending,
-    });
-    const particleField = new THREE.Points(particleGeo, particleMat);
-    scene.add(particleField);
-
-    // 5. Mouse Interaction & Parallax
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const pose: Pose = { x: 0, y: 0, z: 0, ry: 0, scale: 1 };
+    const impulse = { energy: 0, scale: 1 };
     const mouse = { x: 0, y: 0, targetX: 0, targetY: 0 };
-    const handleMouseMove = (e: MouseEvent) => {
-      mouse.targetX = (e.clientX / window.innerWidth - 0.5) * 2;
-      mouse.targetY = -(e.clientY / window.innerHeight - 0.5) * 2;
+    const emissive = new Map<THREE.MeshStandardMaterial, number>();
+    const pivots: Partial<Record<keyof typeof PIVOTS, THREE.Object3D>> = {};
+    const sensorCenters: { object: THREE.Mesh; center: THREE.Vector3; phase: number }[] = [];
+    let model: THREE.Object3D | null = null;
+    let master: THREE.Object3D | null = null;
+    let timeline: gsap.core.Timeline | null = null;
+    let frameId = 0;
+    let time = 0;
+    let lastTime = 0;
+    let angleX = 0;
+    let angleY = 0;
+    let angleZ = 0;
+    let frameCount = 0;
+    let fpsStart = 0;
+    let contextLost = false;
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    const orbitPoint = new THREE.Vector3();
+
+    const applyPose = () => {
+      choreography.position.set(pose.x, pose.y, pose.z);
+      choreography.rotation.y = pose.ry;
+      choreography.scale.setScalar(pose.scale);
     };
-    window.addEventListener('mousemove', handleMouseMove);
-
-    // 6. Pulse Burst Shockwave Function
-    let pulseScale = 1.0;
-    let pulseTarget = 1.0;
-    const triggerPulse = () => {
-      pulseTarget = 1.45;
-      cageMat.opacity = 0.9;
-      innerMat.emissiveIntensity = 1.5;
-      coreLight.intensity = 6;
-
-      gsap.to(innerCore.scale, {
-        x: 1.25,
-        y: 1.25,
-        z: 1.25,
-        duration: 0.2,
-        yoyo: true,
-        repeat: 1,
-        ease: 'power2.out',
-      });
-
-      gsap.to(coreLight, {
-        intensity: 2,
-        duration: 1.2,
-        ease: 'power2.out',
-      });
-
-      gsap.to(cageMat, {
-        opacity: 0.35,
-        duration: 0.8,
-      });
-
-      gsap.to(innerMat, {
-        emissiveIntensity: 0.6,
-        duration: 0.8,
-      });
-    };
-
-    pulseFnRef.current = triggerPulse;
-    if (onPulseReady) {
-      onPulseReady(triggerPulse);
-    }
-
-    // 7. GSAP ScrollTrigger Choreography
-    const ctx = gsap.context(() => {
-      // Timeline pinned across sections
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: '#app-root',
-          start: 'top top',
-          end: 'bottom bottom',
-          scrub: 1.2,
-        },
-      });
-
-      // Section 1: Move core to the right to feature the WhatsApp Study Agent
-      tl.to(coreGroup.position, {
-        x: 2.4,
-        y: 0.2,
-        z: -0.5,
-        ease: 'power1.inOut',
-      }, 0.2);
-
-      tl.to(coreGroup.rotation, {
-        x: 0.6,
-        y: Math.PI * 1.2,
-        ease: 'none',
-      }, 0.2);
-
-      // Section 2: Shift to left for Architecture specs
-      tl.to(coreGroup.position, {
-        x: -2.3,
-        y: -0.3,
-        z: -0.8,
-        ease: 'power1.inOut',
-      }, 0.5);
-
-      tl.to(coreGroup.rotation, {
-        x: -0.4,
-        y: Math.PI * 2.2,
-        ease: 'none',
-      }, 0.5);
-
-      // Section 3: Float higher in background over Terminal
-      tl.to(coreGroup.position, {
-        x: 0,
-        y: 1.6,
-        z: -3.2,
-        ease: 'power1.inOut',
-      }, 0.8);
-
-      tl.to(coreGroup.scale, {
-        x: 0.8,
-        y: 0.8,
-        z: 0.8,
-        ease: 'power1.inOut',
-      }, 0.8);
-    });
-
-    // 8. Animation Loop
-    let animationFrameId: number;
-    let clock = new THREE.Clock();
-
-    const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
-      const elapsedTime = clock.getElapsedTime();
-
-      // Smooth mouse lerp
-      mouse.x += (mouse.targetX - mouse.x) * 0.05;
-      mouse.y += (mouse.targetY - mouse.y) * 0.05;
-
-      // Base idle rotations
-      innerCore.rotation.x = elapsedTime * 0.35 + mouse.y * 0.4;
-      innerCore.rotation.y = elapsedTime * 0.45 + mouse.x * 0.4;
-
-      outerCage.rotation.x = -elapsedTime * 0.25;
-      outerCage.rotation.y = -elapsedTime * 0.3;
-
-      // Concentric rings counter-rotation
-      if (rings[0]) {
-        rings[0].rotation.x = elapsedTime * 0.5 + mouse.y * 0.2;
-        rings[0].rotation.y = elapsedTime * 0.2;
-      }
-      if (rings[1]) {
-        rings[1].rotation.y = -elapsedTime * 0.4 + mouse.x * 0.2;
-        rings[1].rotation.z = elapsedTime * 0.3;
-      }
-      if (rings[2]) {
-        rings[2].rotation.z = elapsedTime * 0.45;
-        rings[2].rotation.x = -elapsedTime * 0.25;
-      }
-
-      // Orbiting satellites
-      satellites.forEach((sat, i) => {
-        const angle = elapsedTime * (0.8 + i * 0.15) + (i * Math.PI * 2) / satelliteCount;
-        const radius = 1.9 + Math.sin(elapsedTime * 2 + i) * 0.15;
-        sat.position.x = Math.cos(angle) * radius;
-        sat.position.y = Math.sin(angle * 1.2) * 0.6;
-        sat.position.z = Math.sin(angle) * radius;
-      });
-
-      // Slowly drift background particle field
-      particleField.rotation.y = elapsedTime * 0.02;
-      particleField.rotation.x = Math.sin(elapsedTime * 0.05) * 0.05;
-
-      // Pulse decay
-      pulseScale += (pulseTarget - pulseScale) * 0.1;
-      if (pulseTarget > 1.0) pulseTarget -= 0.015;
-
+    const draw = () => {
+      applyPose();
       renderer.render(scene, camera);
     };
-
-    animate();
-
-    // 9. Resize Handling
-    const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const rebuildScroll = () => {
+      timeline?.scrollTrigger?.kill();
+      timeline?.kill();
+      timeline = null;
+      Object.assign(pose, { x: 0, y: 0, z: 0, ry: 0, scale: 1 });
+      if (reducedMotion.matches) { draw(); return; }
+      const stages: { selector: string; pose: Pose }[] = [
+        { selector: '#featured-project', pose: { x: 2.4, y: 0.2, z: -0.5, ry: Math.PI / 2, scale: 1 } },
+        { selector: '#architecture', pose: { x: -2.3, y: -0.3, z: -0.8, ry: -Math.PI / 3, scale: 1 } },
+        { selector: '#terminal', pose: { x: 0, y: 1.6, z: -3.2, ry: 0, scale: 0.8 } },
+      ];
+      let previous = 0;
+      const track = gsap.timeline({ paused: true });
+      stages.forEach((stage) => {
+        const element = document.querySelector(stage.selector);
+        if (!element) return;
+        const stop = Math.max(previous + 1, element.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.35);
+        track.to(pose, { ...stage.pose, duration: stop - previous, ease: 'none' });
+        previous = stop;
+      });
+      timeline = track;
+      ScrollTrigger.create({
+        trigger: '#app-root', start: 'top top', end: previous,
+        animation: track, scrub: 1, invalidateOnRefresh: true,
+      });
     };
-    window.addEventListener('resize', handleResize);
 
-    // Cleanup
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('resize', handleResize);
-      cancelAnimationFrame(animationFrameId);
-      ctx.revert();
-      if (containerRef.current && renderer.domElement) {
-        containerRef.current.removeChild(renderer.domElement);
+    const resize = () => {
+      const width = host.clientWidth || window.innerWidth;
+      const height = host.clientHeight || window.innerHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, width < 768 ? 1.5 : 2));
+      renderer.setSize(width, height);
+      // Keep the exact scroll poses separate from responsive model fitting.
+      responsiveFit.scale.setScalar(Math.min(1, camera.aspect / 0.9));
+      rebuildScroll();
+      draw();
+    };
+    const animate = (now: number) => {
+      frameId = 0;
+      if (disposed || document.hidden || contextLost) return;
+      const delta = lastTime ? Math.min((now - lastTime) / 1000, 0.05) : 0;
+      lastTime = now;
+      if (!reducedMotion.matches) {
+        time += delta;
+        const damping = 1 - Math.exp(-5 * delta);
+        mouse.x += (mouse.targetX - mouse.x) * damping;
+        mouse.y += (mouse.targetY - mouse.y) * damping;
+        const speed = 1 + impulse.energy * 4;
+        angleX += delta * 0.24 * speed;
+        angleY -= delta * 0.19 * speed;
+        angleZ += delta * 0.1 * speed;
+        if (pivots.x) pivots.x.rotation.x = angleX + mouse.y * 0.22;
+        if (pivots.y) pivots.y.rotation.y = angleY + mouse.x * 0.22;
+        if (pivots.z) pivots.z.rotation.y = angleZ; // Blender Z becomes glTF/Three Y-up.
+        if (pivots.crystal) {
+          pivots.crystal.position.y = Math.sin(time * 2) * 0.08;
+          pivots.crystal.rotation.y += delta * 0.65 * speed;
+        }
+        if (pivots.nucleus) {
+          pivots.nucleus.rotation.y += delta * 0.06 * speed;
+          pivots.nucleus.scale.setScalar(impulse.scale);
+        }
+        if (pivots.sensors) pivots.sensors.rotation.y = time * 0.12;
+        sensorCenters.forEach(({ object, center, phase }) => {
+          // Vertices have baked world-center pivots. Translate by the CENTER DELTA;
+          // replacing object.position with an orbit position would double the radius.
+          orbitPoint.copy(center).applyAxisAngle(yAxis, time * 0.025 * Math.sin(phase));
+          orbitPoint.multiplyScalar(1 + Math.sin(time * 1.3 + phase) * 0.045);
+          object.position.copy(orbitPoint).sub(center);
+        });
+        if (master) {
+          master.rotation.x = mouse.y * 0.08;
+          master.rotation.z = -mouse.x * 0.06;
+        }
       }
+      emissive.forEach((base, material) => { material.emissiveIntensity = base * (1 + impulse.energy * 2); });
+      draw();
+      frameCount++;
+      if (!fpsStart) fpsStart = now;
+      if (now - fpsStart >= 2000) {
+        host.dataset.coreFps = (frameCount * 1000 / (now - fpsStart)).toFixed(1);
+        fpsStart = now; frameCount = 0;
+      }
+      if (!reducedMotion.matches || impulse.energy > 0.001) frameId = requestAnimationFrame(animate);
+    };
+    const start = () => {
+      lastTime = 0;
+      if (!frameId && !disposed && !document.hidden && !contextLost) frameId = requestAnimationFrame(animate);
+    };
+    const pulse = () => {
+      if (!model || disposed) return;
+      gsap.killTweensOf(impulse);
+      // 3x peak emission, then exponential decay. Reduced-motion users get a
+      // short light-only response, with no rotation or scale impulse.
+      impulse.energy = 1;
+      impulse.scale = reducedMotion.matches ? 1 : 1.16;
+      gsap.to(impulse, { energy: 0, scale: 1, duration: reducedMotion.matches ? 0.35 : 1.4, ease: 'expo.out', overwrite: true });
+      host.dataset.corePulseCount = String(Number(host.dataset.corePulseCount || 0) + 1);
+      start();
+    };
+    const pointerMove = (event: PointerEvent) => {
+      mouse.targetX = event.clientX / window.innerWidth * 2 - 1;
+      mouse.targetY = event.clientY / window.innerHeight * 2 - 1;
+    };
+    const visibilityChange = () => {
+      if (document.hidden) { cancelAnimationFrame(frameId); frameId = 0; }
+      else start();
+    };
+    const loseContext = (event: Event) => {
+      event.preventDefault(); contextLost = true;
+      cancelAnimationFrame(frameId); frameId = 0;
+      host.dataset.coreStatus = 'context-lost';
+    };
+    const restoreContext = () => { contextLost = false; host.dataset.coreStatus = 'ready'; start(); };
+    const motionChange = () => { gsap.killTweensOf(impulse); impulse.energy = 0; impulse.scale = 1; resize(); start(); };
+    window.addEventListener('pointermove', pointerMove, { passive: true });
+    window.addEventListener('resize', resize);
+    document.addEventListener('visibilitychange', visibilityChange);
+    reducedMotion.addEventListener('change', motionChange);
+    renderer.domElement.addEventListener('webglcontextlost', loseContext);
+    renderer.domElement.addEventListener('webglcontextrestored', restoreContext);
+    resize();
+    start();
+
+    const requestStart = performance.now();
+    new GLTFLoader().load(`${import.meta.env.BASE_URL}assets/core.glb`, (gltf) => {
+      if (disposed) { disposeModel(gltf.scene); return; }
+      model = gltf.scene;
+      master = model.getObjectByName('Vexxbit_Core') || model;
+      try {
+        for (const [key, names] of Object.entries(PIVOTS)) {
+          const pivot = names.map((name) => model?.getObjectByName(name)).find(Boolean);
+          if (!pivot) throw new Error(`Missing core pivot: ${names.join(' / ')}`);
+          pivots[key as keyof typeof PIVOTS] = pivot;
+        }
+        const tuned = new Set<THREE.Material>();
+        model.traverse((object) => {
+          if (!(object instanceof THREE.Mesh)) return;
+          const slots: THREE.Material[] = Array.isArray(object.material) ? object.material : [object.material];
+          slots.forEach((material) => {
+            if (tuned.has(material)) return;
+            tuned.add(material);
+            if (!(material instanceof THREE.MeshStandardMaterial)) return;
+            if (material.name === 'Mat_Obsidian_Hull') {
+              material.color.set('#0B0D14'); material.metalness = 0.92; material.roughness = 0.18;
+              if (material instanceof THREE.MeshPhysicalMaterial) material.clearcoat = 0.8;
+            } else if (material.name === 'Mat_Cyan_Emissive' || material.name === 'Mat_Emerald_Nodes') {
+              const cyan = material.name === 'Mat_Cyan_Emissive';
+              material.color.set(cyan ? '#00F2FE' : '#10B981');
+              material.emissive.copy(material.color);
+              material.emissiveIntensity = cyan ? 5 : 3.5;
+              emissive.set(material, material.emissiveIntensity);
+            } else if (material.name === 'Mat_Quantum_Glass' && material instanceof THREE.MeshPhysicalMaterial) {
+              material.transmission = 0.95; material.roughness = 0.05; material.ior = 1.52;
+            }
+          });
+        });
+        pivots.sensors?.children.forEach((object, index) => {
+          if (!(object instanceof THREE.Mesh)) return;
+          object.geometry.computeBoundingBox();
+          const center = object.geometry.boundingBox?.getCenter(new THREE.Vector3());
+          if (center) sensorCenters.push({ object, center, phase: index * Math.PI / 3 });
+        });
+        responsiveFit.add(model);
+        host.dataset.coreLoadMs = (performance.now() - requestStart).toFixed(1);
+        host.dataset.coreStatus = 'ready';
+        host.dataset.corePivots = String(Object.keys(pivots).length);
+        onPulseReady?.(pulse);
+        draw();
+        start();
+      } catch (error) {
+        host.dataset.coreStatus = 'invalid-model';
+        console.error('Vexxbit core hierarchy validation failed', error);
+        disposeModel(model); model = null;
+      }
+    }, undefined, (error: unknown) => {
+      if (!disposed) { host.dataset.coreStatus = 'load-error'; console.error('Vexxbit core failed to load', error); }
+    });
+
+    return () => {
+      disposed = true;
+      onPulseReady?.(null);
+      cancelAnimationFrame(frameId);
+      timeline?.scrollTrigger?.kill();
+      timeline?.kill();
+      gsap.killTweensOf(impulse);
+      window.removeEventListener('pointermove', pointerMove);
+      window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', visibilityChange);
+      reducedMotion.removeEventListener('change', motionChange);
+      renderer.domElement.removeEventListener('webglcontextlost', loseContext);
+      renderer.domElement.removeEventListener('webglcontextrestored', restoreContext);
+      if (model) disposeModel(model);
+      environment.dispose();
       renderer.dispose();
-      innerGeo.dispose();
-      innerMat.dispose();
-      cageGeo.dispose();
-      cageMat.dispose();
-      particleGeo.dispose();
-      particleMat.dispose();
+      renderer.domElement.remove();
     };
   }, [onPulseReady]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 pointer-events-none z-0 overflow-hidden"
-      aria-hidden="true"
-    />
-  );
-};
+  return <div ref={containerRef} className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true" data-vexxbit-core="true" />;
+}

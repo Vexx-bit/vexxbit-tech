@@ -24,10 +24,11 @@ export const InteractiveTerminal: React.FC<TerminalProps> = ({ onTriggerPulse })
     },
   ]);
   const [copied, setCopied] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bufferRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const buffer = bufferRef.current;
+    if (buffer) buffer.scrollTop = buffer.scrollHeight;
   }, [history]);
 
   const executeCommand = (cmd: string) => {
@@ -207,7 +208,7 @@ export const InteractiveTerminal: React.FC<TerminalProps> = ({ onTriggerPulse })
   return (
     <div className="w-full glass-panel-glow rounded-xl overflow-hidden font-mono shadow-2xl border border-white/10">
       {/* Terminal Title Bar */}
-      <div className="bg-[#0b0d14]/90 px-4 py-3 flex items-center justify-between border-b border-white/[0.08]">
+      <div className="bg-[#0b0d14]/90 px-4 py-3 flex flex-wrap gap-2 items-center justify-between border-b border-white/[0.08]">
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-[#ef4444]/80 inline-block" />
           <span className="w-3 h-3 rounded-full bg-[#eab308]/80 inline-block" />
@@ -231,7 +232,7 @@ export const InteractiveTerminal: React.FC<TerminalProps> = ({ onTriggerPulse })
       </div>
 
       {/* Terminal Content Buffer */}
-      <div className="p-4 sm:p-5 h-72 sm:h-80 overflow-y-auto space-y-2.5 text-xs sm:text-sm bg-[#06070a]/90 backdrop-blur-md">
+      <div ref={bufferRef} className="p-4 sm:p-5 h-72 sm:h-80 overflow-y-auto space-y-2.5 text-xs sm:text-sm bg-[#06070a]/90 backdrop-blur-md">
         {history.map((line, idx) => (
           <div key={idx} className="leading-relaxed">
             {line.type === 'input' && (
@@ -251,7 +252,6 @@ export const InteractiveTerminal: React.FC<TerminalProps> = ({ onTriggerPulse })
             )}
           </div>
         ))}
-        <div ref={bottomRef} />
       </div>
 
       {/* Quick Action Pills */}
@@ -278,6 +278,7 @@ export const InteractiveTerminal: React.FC<TerminalProps> = ({ onTriggerPulse })
         </span>
         <input
           type="text"
+          aria-label="Lab terminal command"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { 
   Terminal as TerminalIcon, 
   Cpu, 
@@ -26,13 +26,14 @@ const GithubIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' })
   </svg>
 );
 import confetti from 'canvas-confetti';
-import { Canvas3D } from './components/Canvas3D';
+const Canvas3D = lazy(() => import('./components/Canvas3D').then((module) => ({ default: module.Canvas3D })));
 import { InteractiveTerminal } from './components/InteractiveTerminal';
 import { sounds } from './utils/sound';
 
 export const App: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [pulseFn, setPulseFn] = useState<(() => void) | null>(null);
+  const handleCoreReady = useCallback((fn: (() => void) | null) => setPulseFn(() => fn), []);
   const [copiedDomain, setCopiedDomain] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [currentTime, setCurrentTime] = useState('');
@@ -88,7 +89,7 @@ export const App: React.FC = () => {
   return (
     <div id="app-root" className="relative min-h-screen bg-[#07080b] text-[#f1f5f9] font-sans selection:bg-[#00f2fe]/30 selection:text-white">
       {/* 3D WebGL Canvas Layer */}
-      <Canvas3D onPulseReady={(fn) => setPulseFn(() => fn)} />
+      <Suspense fallback={null}><Canvas3D onPulseReady={handleCoreReady} /></Suspense>
 
       {/* Grid Pattern Ambient Overlay */}
       <div className="fixed inset-0 bg-grid-cyber pointer-events-none z-0 opacity-40" />

@@ -30,7 +30,7 @@
 | Layer | Technologies |
 | :--- | :--- |
 | **Frontend Framework** | React 19, Vite, TypeScript |
-| **3D & Graphics** | Three.js (WebGL), PBR Shaders, Volumetric Particle Systems |
+| **3D & Graphics** | Three.js (WebGL), GLTFLoader, physical PBR materials, GLB 2.0 |
 | **Animation & Scroll** | GSAP 3 (GreenSock), ScrollTrigger |
 | **Audio Synthesis** | Web Audio API (Hardware-accelerated procedural synthesis) |
 | **Styling & HUD** | Tailwind CSS v4, Lucide Icons, Glassmorphism, Custom Grid Overlays |
@@ -80,3 +80,18 @@ npm run build
 * **DEV.to:** [@vexxbit](https://dev.to/vexxbit)
 * **GitHub:** [@Vexx-bit](https://github.com/Vexx-bit)
 * **Hacktoberfest:** Verified MLH Participant `018c1df7-3267-6ba4-90e3-ccc64cd68b8a`
+
+
+## GLB integration and production checks
+
+Permanent project root: `C:\GitHub\vexxbit-tech`. The separate Hacktoberfest briefing directory is not the app.
+
+- Model: `public/assets/core.glb` (22,664 triangles, 844,304 bytes).
+- Exact pivots: `Vexxbit_Core`, `Quantum_Processor`, `Floating_Crystal`, `Gimbal_01_Inner_X`, `Gimbal_02_Middle_Y`, `Gimbal_03_Outer_Z`, `Satellite_Sensors`.
+- The model is exported Y-up. Its sensor meshes have baked world-center origins; animation uses center deltas rather than doubling their orbit radius.
+- GSAP scroll poses use the actual featured-project, architecture, and terminal section positions. Reduced-motion users receive a static core and light-only pulse.
+- Lifecycle cleanup disposes shared GPU resources once and cancels animation, listeners, and ScrollTriggers. WebGL failure leaves the HTML page usable.
+- Run `npm ci`, `npm run lint`, and `npm run build` with Node 24. TypeScript strict mode is enabled. GitHub CI runs the same checks.
+- Pages build command: `npm run build`; output directory: `dist`; production branch: `main`.
+- Browser telemetry is available on `[data-vexxbit-core]`: `data-core-status`, `data-core-load-ms`, `data-core-fps`, `data-core-pulse-count`. Load timing includes parse/GPU setup, not just network transfer; results depend on hardware and connection.
+- Preserve Titan MX and SPF TXT records when configuring apex and www CNAMEs.
